@@ -44,6 +44,7 @@ mod erc20 {
     pub enum Error {
 
         InsufficientBalance,
+        InsufficientAllowance,
     }
 
     pub type Result<T> = core::result::Result<T,Error>;
@@ -101,17 +102,49 @@ mod erc20 {
             Ok(())
         }
 
+        #[ink(message)]
+        pub fn transfer_from(&mut self, from: AccountId, to: AccountId, value: Balance) -> Result<()>{
+            let caller = Self::env().caller();
+            let allowance = self.allowance(from, caller);
+            if allowance < value {
+                return Err(Error::InsufficientAllowance)
+            }
+            self.transfer_from_to(from, to , value)?;
+
+            self.allowance.insert((from, to), allowance - value);
+            
+            Ok(())
+        }
+
+        fn transfer_from_to(&mut self, from: AccountId, to: AccountId, value:Balance) -> Result<()>{
+
+
+            let from_balance = self.balance_of(from);
+            if from_balance < value {
+                return Err(Error::InsufficientBalance)
+            }
+            self.balances.insert(from, from_balance - value);
+
+            let to_balance = self.balance_of(to);
+            self.balances.insert(to, to_balance + value);
+            
+            self.env().emit_event( Transfer{
+                from : from,
+                to : to,
+                value : value
+            });
+            Ok(())
+        }
         // #[ink(message)]
         // pub fn transfer_from(&mut self, from:AccountId, to:AccountId, value:Balance) -> Reslult
         // {
 
 
         // }
-        // 授权某账号可以使用自己的账户余额
+
         #[ink(message)]
         pub fn approve(&mut self, spender: AccountId, value: Balance) -> Result<()>{
             let caller = Self::env().caller();
-            // 插入授权的记录，授权是未来花费，所以不需要考虑当前是否有余额是否足够，
             self.allowance.insert((caller, spender), value);
 
             self.env().emit_event( Approval{
@@ -122,11 +155,9 @@ mod erc20 {
             Ok(())
         }
 
-        // 获取第一个账户授权第二个账户可使用的数量
         #[ink(message)]
         pub fn allowance(&self, owner: AccountId, spender: AccountId) -> Balance {
-            // 或者 self.allowances.get(&(owner, spender)).copied().unwrap_or(0)
-            // 因为 copied 后，就不需要解引用(*)了
+ 
             *self.allowance.get(&(owner, spender)).unwrap_or(&0)
         }
 
